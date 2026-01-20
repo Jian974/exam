@@ -1,179 +1,22 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>期末考看板系統</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>入口頁面</title>
 <script src="https://cdn.tailwindcss.com"></script>
-<script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-<style>
-body {
-    font-family: "Microsoft JhengHei", "Heiti TC", sans-serif;
-    overflow: hidden;
-    background-color: #f3f4f6;
-    margin: 0;
-}
-.text-shadow { text-shadow: 2px 2px 4px rgba(0,0,0,0.1); }
-.hidden-input { display: none; }
-.btn-active:active { transform: scale(0.95); }
-.track-transition { transition: stroke-dashoffset 1s linear, stroke 0.5s ease; }
-
-.bg-stripes {
-    background-image: linear-gradient(45deg, #fbbf24 25%, transparent 25%, transparent 50%, #fbbf24 50%, #fbbf24 75%, transparent 75%, transparent);
-    background-size: 20px 20px;
-}
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-.animate-fade-in { animation: fadeIn 0.5s ease-out forwards; }
-</style>
 </head>
-<body>
-<div id="root"></div>
+<body class="bg-gray-100 flex items-center justify-center h-screen">
 
-<script type="text/babel">
-const { useState, useEffect, useMemo, useRef } = React;
+<div class="flex flex-col gap-6">
+    <a href="index.html" class="px-8 py-4 bg-blue-500 text-white font-bold rounded hover:bg-blue-600 text-center">
+        期末考看板系統
+    </a>
+    <a href="exam%20growth%20curve.html" class="px-8 py-4 bg-green-500 text-white font-bold rounded hover:bg-green-600 text-center">
+        成績分析系統
+    </a>
+</div>
 
-// --- 資料 ---
-const SCHEDULE = [
-    { type: 'break', start: '08:00', end: '08:10', label: '準備' },
-    { type: 'exam', start: '08:10', end: '09:10', label: '第一節' },
-    { type: 'break', start: '09:20', end: '10:00', label: '自習' },
-    { type: 'exam', start: '10:10', end: '11:00', label: '第二節' },
-    { type: 'break', start: '11:10', end: '12:00', label: '自習' },
-    { type: 'exam', start: '13:00', end: '13:50', label: '第三節' },
-    { type: 'break', start: '14:00', end: '14:50', label: '自習' },
-    { type: 'exam', start: '15:10', end: '16:00', label: '第四節' },
-];
-const EXAM_SLOTS = SCHEDULE.filter(s => s.type==='exam');
-const EXAM_MESSAGES = [
-    "考卷記得寫上班級姓名座號","有問題舉手問老師，需要撿東西請監考老師幫忙",
-    "不會寫的題目跳過寫會的題目","耐心、細心、小心",
-    "考卷有不會的問題等出題老師來了再問",
-    "不要轉頭玩東西，寫完多檢查","檢查完再檢查或趴下休息",
-    "考試即將結束，檢查有沒有寫答案抄錯"
-];
-const BREAK_MESSAGES = [
-    "等監考老師點完再離開座位下課","利用下課準備下個科目與文具用品",
-    "提早上廁所喝水","桌面淨空","準備考試、收拾位置、坐在位置上"
-];
-
-// 格式化時間
-const formatTime = (date) => {
-    const h = String(date.getHours()).padStart(2,'0');
-    const m = String(date.getMinutes()).padStart(2,'0');
-    const s = String(date.getSeconds()).padStart(2,'0');
-    return `${h}:${m}:${s}`;
-};
-
-// --- App ---
-const App = () => {
-    const [page, setPage] = useState("board"); // "board" or "analysis"
-    const [now,setNow]=useState(new Date());
-    const [offset,setOffset]=useState(()=>{ const saved=localStorage.getItem('exam_clock_offset'); return saved?parseInt(saved,10):0; });
-    const [audioTracks,setAudioTracks]=useState([
-        { src:null,fileName:"",isPlaying:false,progress:0 },
-        { src:null,fileName:"",isPlaying:false,progress:0 },
-        { src:null,fileName:"",isPlaying:false,progress:0 }
-    ]);
-    const audioRefs=useRef([]);
-    const fileInputRefs=useRef([]);
-    const [examData,setExamData]=useState(()=>{
-        const saved=localStorage.getItem('exam_data'); if(saved) return JSON.parse(saved);
-        return { subjects:["英文","公民","物理"], shouldArrive:"", actualArrive:"", absentList:"" };
-    });
-
-    useEffect(()=>{ const t=setInterval(()=>setNow(new Date()),1000); return ()=>clearInterval(t); },[]);
-    useEffect(()=>{ localStorage.setItem('exam_clock_offset', offset); },[offset]);
-    useEffect(()=>{ localStorage.setItem('exam_data', JSON.stringify(examData)); },[examData]);
-
-    const adjustedNow = useMemo(()=>new Date(now.getTime()+offset),[now,offset]);
-
-    const currentSlot = useMemo(()=>{
-        const currentMs = adjustedNow.getHours()*3600000 + adjustedNow.getMinutes()*60000 + adjustedNow.getSeconds()*1000;
-        for(let slot of SCHEDULE){
-            const [sh,sm]=slot.start.split(":").map(Number);
-            const startMs=sh*3600000+sm*60000;
-            const [eh,em]=slot.end.split(":").map(Number);
-            const endMs=eh*3600000+em*60000;
-            if(currentMs>=startMs && currentMs<endMs) return {...slot,startMs,endMs,durationMs:endMs-startMs};
-        }
-        return null;
-    },[adjustedNow]);
-
-    const reminderMessage = useMemo(()=>{
-        if(!currentSlot) return "非考試/準備時段";
-        const currentMs = adjustedNow.getHours()*3600000 + adjustedNow.getMinutes()*60000 + adjustedNow.getSeconds()*1000;
-        const elapsedMinutes = Math.floor((currentMs - currentSlot.startMs)/60000);
-        let messages=[],interval=5;
-        if(currentSlot.type==='exam'){ messages=EXAM_MESSAGES; interval=5; }
-        else{ messages=BREAK_MESSAGES; const durationMins=currentSlot.durationMs/60000; interval=(durationMins>=20?4:2); }
-        const index=Math.floor(elapsedMinutes/interval)%messages.length;
-        return messages[index];
-    },[adjustedNow,currentSlot]);
-
-    const progressInfo = useMemo(()=>{
-        if(!currentSlot) return {remainingPercent:0,color:'stroke-gray-300',text:'等待中'};
-        const currentMs=adjustedNow.getHours()*3600000+adjustedNow.getMinutes()*60000+adjustedNow.getSeconds()*1000;
-        const progressMs=currentMs-currentSlot.startMs;
-        const totalMs=currentSlot.durationMs;
-        const remainingMs=totalMs-progressMs;
-        const elapsedPercent=Math.min(100,Math.max(0,(progressMs/totalMs)*100));
-        const remainingPercent=100-elapsedPercent;
-        let colorClass='stroke-green-500',statusText="";
-        if(currentSlot.type==='exam'){
-            statusText="考試開始";
-            if(remainingMs<=totalMs/2){ colorClass='stroke-yellow-400'; statusText="考試時間剩下一半";}
-            if(remainingMs<=10*60000){ colorClass='stroke-red-500'; statusText="考試時間不到10分鐘";}
-        } else {
-            if(remainingMs>5*60000){ colorClass='stroke-green-500'; statusText="休息時間";}
-            else if(remainingMs>3*60000){ colorClass='stroke-yellow-400'; statusText="快去上廁所喝水";}
-            else{ colorClass='stroke-red-500'; statusText="請收拾東西在座位上坐好";}
-        }
-        return {remainingPercent,color:colorClass,text:statusText};
-    },[adjustedNow,currentSlot]);
-
-    const handleInputChange=(field,value)=>setExamData(prev=>({...prev,[field]:value}));
-    const handleSubjectChange=(index,value)=>{ const newSubjects=[...examData.subjects]; newSubjects[index]=value; setExamData(prev=>({...prev,subjects:newSubjects})); }
-    const adjustTime=(seconds)=>setOffset(prev=>prev+(seconds*1000));
-    const handleFileSelect=(index,e)=>{ const file=e.target.files[0]; if(file){ const url=URL.createObjectURL(file); setAudioTracks(prev=>{ const newTracks=[...prev]; if(newTracks[index].src) URL.revokeObjectURL(newTracks[index].src); newTracks[index]={src:url,fileName:file.name,isPlaying:false,progress:0}; return newTracks; }); } };
-    const togglePlay=(index)=>{ const audioEl=audioRefs.current[index]; if(!audioEl) return; setAudioTracks(prev=>{ const newTracks=[...prev]; const isNowPlaying=!newTracks[index].isPlaying; if(isNowPlaying){ newTracks.forEach((track,i)=>{ if(i!==index && track.isPlaying){ if(audioRefs.current[i]) audioRefs.current[i].pause(); track.isPlaying=false; } }); audioEl.play(); } else{ audioEl.pause(); } newTracks[index].isPlaying=isNowPlaying; return newTracks; }); };
-    const replayAudio=(index)=>{ const audioEl=audioRefs.current[index]; if(!audioEl) return; audioEl.currentTime=0; audioEl.play(); setAudioTracks(prev=>{ const newTracks=[...prev]; newTracks.forEach((track,i)=>{ if(i!==index && track.isPlaying){ if(audioRefs.current[i]) audioRefs.current[i].pause(); track.isPlaying=false; } }); newTracks[index].isPlaying=true; return newTracks; }); };
-    const handleAudioEnded=(index)=>{ setAudioTracks(prev=>{ const newTracks=[...prev]; newTracks[index].isPlaying=false; newTracks[index].progress=0; return newTracks; }); };
-    const handleTimeUpdate=(index,e)=>{ const current=e.target.currentTime; const duration=e.target.duration; const percent=(duration>0)?(current/duration*100):0; setAudioTracks(prev=>{ const newTracks=[...prev]; newTracks[index]={...newTracks[index],progress:percent}; return newTracks; }); };
-
-    // --- 切換到分析系統
-    if(page==="analysis"){
-        return (
-            <div className="flex flex-col h-screen w-screen relative">
-                <div className="absolute top-2 right-4 z-20 flex gap-2">
-                    <button onClick={()=>setPage("board")} className="px-4 py-2 bg-blue-600 text-white rounded font-bold">回看板</button>
-                </div>
-                <iframe src="https://jian974.github.io/exam/exam%20growth%20curve.html" className="w-full h-full border-0"></iframe>
-            </div>
-        );
-    }
-
-    // --- 原本看板畫面 ---
-    return (
-        <div className="flex flex-col h-screen w-screen overflow-hidden text-gray-800 relative">
-            {/* 切換按鈕 */}
-            <div className="absolute top-2 right-4 z-20 flex gap-2">
-                <button onClick={()=>setPage("analysis")} className="px-4 py-2 bg-yellow-400 text-black rounded font-bold">成績分析系統</button>
-            </div>
-
-            {/* ===== 原本 C 區 + A/B 區完整 JSX 放這裡 ===== */}
-            {/* 你可以把原本完整看板程式碼從 <div className="h-[33vh] ..."> 到 </div> 完整貼入 */}
-        </div>
-    );
-};
-
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<App />);
-</script>
 </body>
 </html>
+
